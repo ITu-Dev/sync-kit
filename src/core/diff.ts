@@ -1,11 +1,13 @@
 import { FileOperation, Conflict, DetectedChange } from '../types/index.js';
 import { fileExists, hashFile, readFileContent } from '../utils/fs.js';
-import { isFileModifiedLocally } from './git.js';
+import { getStatus } from './git.js';
 import { getFileFromArchive } from './archive.js';
+import { normalizePath } from '../utils/paths.js';
 import AdmZip from 'adm-zip';
 
 /**
  * Detect conflicts between archive operations and local state
+ * Optimized: fetches git status once instead of per-file
  */
 export async function detectConflicts(
   operations: FileOperation[],
@@ -13,16 +15,25 @@ export async function detectConflicts(
 ): Promise<Conflict[]> {
   const conflicts: Conflict[] = [];
 
+  // Get git status once for all files (fixes N+1 problem)
+  const status = await getStatus();
+  const modifiedFiles = new Set([
+    ...status.modified.map(normalizePath),
+    ...status.staged.map(normalizePath),
+    ...status.not_added.map(normalizePath),
+  ]);
+
   for (const op of operations) {
     const localPath = `${targetDir}/${op.path}`;
     const localExists = fileExists(localPath);
 
     switch (op.type) {
       case 'add':
-        // Conflict if file already exists locally
+        // Conflict if file already exists locally with different content
         if (localExists) {
           const localHash = await hashFile(localPath);
-          if (localHash !== op.hash) {
+          // Only conflict if hashes differ (and archive hash exists)
+          if (op.hash && localHash !== op.hash) {
             conflicts.push({
               path: op.path,
               reason: 'already_exists',
@@ -33,9 +44,8 @@ export async function detectConflicts(
 
       case 'modify':
         if (localExists) {
-          // Check if file was modified locally
-          const isModified = await isFileModifiedLocally(op.path);
-          if (isModified) {
+          // Check if file was modified locally using cached status
+          if (modifiedFiles.has(normalizePath(op.path))) {
             conflicts.push({
               path: op.path,
               reason: 'modified_locally',
@@ -60,6 +70,14 @@ export async function detectConflicts(
             conflicts.push({
               path: op.from,
               reason: 'deleted_locally',
+            });
+          }
+          // Check if target path already exists (new check)
+          const toExists = fileExists(localPath);
+          if (toExists) {
+            conflicts.push({
+              path: op.path,
+              reason: 'already_exists',
             });
           }
         }

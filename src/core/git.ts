@@ -3,8 +3,17 @@ import { SourceInfo, DetectedChange, OperationType } from '../types/index.js';
 import { getRepoName, normalizePath } from '../utils/paths.js';
 import { hashFile, getFileSize, isFile } from '../utils/fs.js';
 
-let git: SimpleGit;
-let repoRoot: string;
+let git: SimpleGit | null = null;
+let repoRoot: string | null = null;
+
+/**
+ * Ensure git is initialized before operations
+ */
+function ensureInitialized(): void {
+  if (!git || !repoRoot) {
+    throw new Error('Git not initialized. Call initGit() first.');
+  }
+}
 
 /**
  * Initialize git instance for a repository
@@ -23,24 +32,41 @@ export async function initGit(path: string = process.cwd()): Promise<void> {
 }
 
 /**
+ * Reset git state (for testing purposes)
+ */
+export function resetGit(): void {
+  git = null;
+  repoRoot = null;
+}
+
+/**
+ * Check if git is initialized
+ */
+export function isGitInitialized(): boolean {
+  return git !== null && repoRoot !== null;
+}
+
+/**
  * Get the repository root path
  */
 export function getRepoRoot(): string {
-  return repoRoot;
+  ensureInitialized();
+  return repoRoot!;
 }
 
 /**
  * Get source information about the repository
  */
 export async function getSourceInfo(): Promise<SourceInfo> {
+  ensureInitialized();
   const [branch, commit, status] = await Promise.all([
-    git.revparse(['--abbrev-ref', 'HEAD']),
-    git.revparse(['--short', 'HEAD']),
-    git.status(),
+    git!.revparse(['--abbrev-ref', 'HEAD']),
+    git!.revparse(['--short', 'HEAD']),
+    git!.status(),
   ]);
 
   return {
-    repo: getRepoName(repoRoot),
+    repo: getRepoName(repoRoot!),
     branch: branch.trim(),
     commit: commit.trim(),
     dirty: !status.isClean(),
@@ -51,14 +77,16 @@ export async function getSourceInfo(): Promise<SourceInfo> {
  * Get status of all files in the repo
  */
 export async function getStatus(): Promise<StatusResult> {
-  return git.status();
+  ensureInitialized();
+  return git!.status();
 }
 
 /**
  * Get all tracked files in the repository
  */
 export async function getTrackedFiles(): Promise<string[]> {
-  const result = await git.raw(['ls-files']);
+  ensureInitialized();
+  const result = await git!.raw(['ls-files']);
   return result
     .trim()
     .split('\n')
@@ -70,7 +98,8 @@ export async function getTrackedFiles(): Promise<string[]> {
  * Get untracked files (not in .gitignore)
  */
 export async function getUntrackedFiles(): Promise<string[]> {
-  const result = await git.raw(['ls-files', '--others', '--exclude-standard']);
+  ensureInitialized();
+  const result = await git!.raw(['ls-files', '--others', '--exclude-standard']);
   return result
     .trim()
     .split('\n')
@@ -82,8 +111,9 @@ export async function getUntrackedFiles(): Promise<string[]> {
  * Get list of submodule paths (gitlinks with mode 160000)
  */
 export async function getSubmodules(): Promise<Set<string>> {
+  ensureInitialized();
   try {
-    const result = await git.raw(['ls-files', '--stage']);
+    const result = await git!.raw(['ls-files', '--stage']);
     const submodules = new Set<string>();
 
     for (const line of result.split('\n')) {
@@ -108,7 +138,8 @@ export async function getSubmodules(): Promise<Set<string>> {
  * Detect all changes (staged, unstaged, untracked)
  */
 export async function detectChanges(): Promise<DetectedChange[]> {
-  const status = await git.status();
+  ensureInitialized();
+  const status = await git!.status();
   const changes: DetectedChange[] = [];
   const processedPaths = new Set<string>();
 
@@ -128,7 +159,7 @@ export async function detectChanges(): Promise<DetectedChange[]> {
 
     processedPaths.add(path);
 
-    const fullPath = `${repoRoot}/${path}`;
+    const fullPath = `${repoRoot!}/${path}`;
 
     // For non-delete operations, only add if it's actually a file
     if (type !== 'delete') {
@@ -190,7 +221,7 @@ export async function getAllFiles(): Promise<DetectedChange[]> {
   const changes: DetectedChange[] = [];
 
   for (const filePath of allFiles) {
-    const fullPath = `${repoRoot}/${filePath}`;
+    const fullPath = `${repoRoot!}/${filePath}`;
 
     if (isFile(fullPath)) {
       const size = await getFileSize(fullPath);
@@ -206,7 +237,8 @@ export async function getAllFiles(): Promise<DetectedChange[]> {
  * Check if a file is modified locally (has uncommitted changes)
  */
 export async function isFileModifiedLocally(filePath: string): Promise<boolean> {
-  const status = await git.status();
+  ensureInitialized();
+  const status = await git!.status();
   const normalizedPath = normalizePath(filePath);
 
   return (

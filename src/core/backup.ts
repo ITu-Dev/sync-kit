@@ -1,7 +1,8 @@
 import { join } from 'node:path';
+import { readdir } from 'node:fs/promises';
 import { FileOperation } from '../types/index.js';
-import { ensureDir, copy, fileExists, remove } from '../utils/fs.js';
-import { generateTimestamp } from '../utils/paths.js';
+import { ensureDir, copy, fileExists, remove, listFilesRecursive } from '../utils/fs.js';
+import { generateTimestamp, resolveSafePath } from '../utils/paths.js';
 
 const BACKUP_DIR = '.sync-backup';
 
@@ -23,17 +24,18 @@ export async function createBackup(
   );
 
   for (const op of filesToBackup) {
-    const sourcePath = join(targetDir, op.path);
+    // Validate path is safe (prevents path traversal attacks)
+    const sourcePath = resolveSafePath(targetDir, op.path);
 
     // For renames, backup the source file
     if (op.type === 'rename' && op.from) {
-      const fromPath = join(targetDir, op.from);
+      const fromPath = resolveSafePath(targetDir, op.from);
       if (fileExists(fromPath)) {
-        const backupFilePath = join(backupPath, op.from);
+        const backupFilePath = resolveSafePath(backupPath, op.from);
         await copy(fromPath, backupFilePath);
       }
     } else if (fileExists(sourcePath)) {
-      const backupFilePath = join(backupPath, op.path);
+      const backupFilePath = resolveSafePath(backupPath, op.path);
       await copy(sourcePath, backupFilePath);
     }
   }
@@ -48,12 +50,12 @@ export async function restoreBackup(
   backupPath: string,
   targetDir: string
 ): Promise<void> {
-  const { listFilesRecursive } = await import('../utils/fs.js');
   const files = await listFilesRecursive(backupPath);
 
   for (const file of files) {
-    const sourcePath = join(backupPath, file);
-    const targetPath = join(targetDir, file);
+    // Validate paths are safe
+    const sourcePath = resolveSafePath(backupPath, file);
+    const targetPath = resolveSafePath(targetDir, file);
     await copy(sourcePath, targetPath);
   }
 }
@@ -75,7 +77,6 @@ export async function listBackups(targetDir: string): Promise<string[]> {
     return [];
   }
 
-  const { readdir } = await import('node:fs/promises');
   const entries = await readdir(backupDir, { withFileTypes: true });
 
   return entries

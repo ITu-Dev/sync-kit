@@ -89,3 +89,30 @@ export function joinPath(...parts: string[]): string {
 export function getDirname(filePath: string): string {
   return normalizePath(dirname(filePath));
 }
+
+/**
+ * Check if a path is safely within a base directory (prevents path traversal)
+ * Returns the resolved safe path or throws if path escapes base
+ */
+export function resolveSafePath(basePath: string, relativePath: string): string {
+  const resolvedBase = resolve(basePath);
+  const resolvedFull = resolve(basePath, relativePath);
+
+  if (!resolvedFull.startsWith(resolvedBase + '/') && resolvedFull !== resolvedBase) {
+    throw new Error(`Path traversal detected: "${relativePath}" escapes base directory`);
+  }
+
+  return resolvedFull;
+}
+
+/**
+ * Check if path is safe without throwing
+ */
+export function isPathSafe(basePath: string, relativePath: string): boolean {
+  try {
+    resolveSafePath(basePath, relativePath);
+    return true;
+  } catch {
+    return false;
+  }
+}

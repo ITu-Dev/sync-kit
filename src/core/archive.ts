@@ -1,11 +1,11 @@
 import archiver from 'archiver';
 import AdmZip from 'adm-zip';
 import { createWriteStream } from 'node:fs';
-import { readFile } from 'node:fs/promises';
+import { writeFile, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import { Manifest, FileOperation } from '../types/index.js';
 import { serializeManifest, parseManifest, getManifestSummary } from './manifest.js';
-import { getArchiveFilePath, getFilesDir } from '../utils/paths.js';
+import { getArchiveFilePath } from '../utils/paths.js';
 import { ensureParentDir } from '../utils/fs.js';
 
 /**
@@ -114,7 +114,6 @@ export async function extractArchive(
 
     if (content) {
       await ensureParentDir(targetPath);
-      const { writeFile } = await import('node:fs/promises');
       await writeFile(targetPath, content, { mode: 0o644 });
     }
 
@@ -134,7 +133,6 @@ export function listArchiveEntries(zip: AdmZip): string[] {
  * Get archive size in bytes
  */
 export async function getArchiveSize(archivePath: string): Promise<number> {
-  const { stat } = await import('node:fs/promises');
   const stats = await stat(archivePath);
   return stats.size;
 }
