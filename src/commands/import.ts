@@ -6,13 +6,15 @@ import { detectConflicts, sortOperationsForApply } from '../core/diff.js';
 import { createBackup } from '../core/backup.js';
 import { initGit, getRepoRoot } from '../core/git.js';
 import { fileExists, ensureParentDir, remove } from '../utils/fs.js';
-import { displayBanner, displayArchiveInfo, displaySuccessFooter, displayWarning } from '../ui/banner.js';
-import { displayOperationsTable, displayStats, displayCompactStats } from '../ui/table.js';
+import { displayBanner, displayArchiveInfo, displayWarning, displayImportSuccess } from '../ui/banner.js';
+import { displayStats } from '../ui/table.js';
+import { displayFileTree, FileEntry } from '../ui/tree.js';
+import { displayConflictsSummary, displayConflictCard } from '../ui/conflicts.js';
 import { startSpinner, succeedSpinner, failSpinner, warnSpinner } from '../ui/spinner.js';
-import { showProgress, completeProgress } from '../ui/progress.js';
+import { DetailedProgressTracker } from '../ui/progress.js';
 import { promptConfirm, promptConflictResolution } from '../ui/prompts.js';
 import { logger } from '../ui/logger.js';
-import { colors } from '../ui/theme.js';
+import { addHistoryEntry } from './history.js';
 
 /**
  * Execute import command
@@ -43,8 +45,14 @@ export async function executeImport(
       message: manifest.message,
     });
 
-    // Display operations
-    displayOperationsTable(manifest.operations);
+    // Display operations as tree
+    const fileEntries: FileEntry[] = manifest.operations.map((op) => ({
+      path: op.path,
+      type: op.type,
+      size: op.size,
+      from: op.from,
+    }));
+    displayFileTree(fileEntries, { title: 'Operations to Apply', showIcons: true });
     displayStats(manifest.stats);
 
     // Determine target directory
@@ -96,11 +104,16 @@ export async function executeImport(
     if (conflicts.length > 0) {
       warnSpinner(`${conflicts.length} conflict(s) detected`);
 
+      // Display conflicts summary
+      displayConflictsSummary(conflicts);
+
       // Resolve conflicts
       const resolutions = new Map<string, 'overwrite' | 'skip' | 'keep'>();
 
       if (!options.force) {
-        for (const conflict of conflicts) {
+        for (let i = 0; i < conflicts.length; i++) {
+          const conflict = conflicts[i];
+          displayConflictCard(conflict, conflicts.length, i);
           const resolution = await promptConflictResolution(
             conflict.path,
             getConflictReason(conflict)
@@ -143,11 +156,14 @@ export async function executeImport(
       succeedSpinner(`Backup created: ${backupPath}`);
     }
 
-    // Apply operations
+    // Apply operations with detailed progress
     logger.newline();
-    startSpinner('Applying changes...');
-
     const sortedOps = sortOperationsForApply(manifest.operations);
+    const progress = new DetailedProgressTracker({
+      total: sortedOps.length,
+      label: 'Applying changes',
+    });
+
     let applied = 0;
     const errors: Array<{ op: FileOperation; error: string }> = [];
 
@@ -155,7 +171,7 @@ export async function executeImport(
       try {
         await applyOperation(zip, op, targetDir);
         applied++;
-        showProgress(applied, sortedOps.length);
+        progress.tick(op.path);
       } catch (error) {
         errors.push({
           op,
@@ -164,7 +180,7 @@ export async function executeImport(
       }
     }
 
-    completeProgress();
+    progress.complete();
 
     if (errors.length > 0) {
       warnSpinner(`Applied with ${errors.length} error(s)`);
@@ -176,11 +192,22 @@ export async function executeImport(
       succeedSpinner('All changes applied');
     }
 
-    // Display summary
-    displaySuccessFooter(
-      'Import complete!',
-      `Applied: ${displayCompactStats(manifest.stats)}`
-    );
+    // Display success card
+    displayImportSuccess({
+      archivePath: archivePath,
+      appliedCount: applied,
+      stats: {
+        added: manifest.stats.added,
+        modified: manifest.stats.modified,
+        deleted: manifest.stats.deleted,
+        renamed: manifest.stats.renamed,
+      },
+      backupPath,
+      elapsed: progress.getElapsedFormatted(),
+    });
+
+    // Add to history
+    await addHistoryEntry('import', archivePath, manifest.stats, manifest.message);
   } catch (error) {
     failSpinner('Import failed');
     logger.error(error instanceof Error ? error.message : String(error));

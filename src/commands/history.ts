@@ -3,11 +3,10 @@ import { readFile, writeFile } from 'node:fs/promises';
 import { HistoryEntry, ExportStats } from '../types/index.js';
 import { fileExists, ensureDir, remove } from '../utils/fs.js';
 import { displayBanner } from '../ui/banner.js';
-import { displayCompactStats } from '../ui/table.js';
+import { displayHistoryGraph, displayHistorySummary } from '../ui/history.js';
 import { startSpinner, succeedSpinner, failSpinner } from '../ui/spinner.js';
 import { promptConfirm } from '../ui/prompts.js';
 import { logger } from '../ui/logger.js';
-import { colors, symbols } from '../ui/theme.js';
 
 const HISTORY_DIR = '.sync-history';
 const HISTORY_FILE = 'history.json';
@@ -49,36 +48,11 @@ export async function executeHistory(options: HistoryOptions): Promise<void> {
       return;
     }
 
-    // Display history
-    logger.newline();
-    logger.log(`  Found ${colors.bold(String(entries.length))} entries:`);
-    logger.newline();
+    // Display history with graph
+    displayHistoryGraph(entries);
 
-    for (let i = 0; i < entries.length; i++) {
-      const entry = entries[i];
-      const date = new Date(entry.timestamp).toLocaleString();
-      const typeColor = entry.type === 'export' ? colors.added : colors.renamed;
-      const typeSymbol = entry.type === 'export' ? symbols.add : symbols.arrow;
-
-      const isLast = i === entries.length - 1;
-      const connector = isLast ? symbols.corner : symbols.tee;
-
-      logger.log(
-        `  ${colors.dim(connector)} ${typeColor(typeSymbol)} ${colors.bold(entry.type.toUpperCase())} ${colors.dim(date)}`
-      );
-      logger.log(`  ${colors.dim(isLast ? ' ' : symbols.vertical)}   ${colors.dim('File:')} ${entry.archivePath}`);
-      logger.log(`  ${colors.dim(isLast ? ' ' : symbols.vertical)}   ${colors.dim('Stats:')} ${displayCompactStats(entry.stats)}`);
-
-      if (entry.message) {
-        logger.log(`  ${colors.dim(isLast ? ' ' : symbols.vertical)}   ${colors.dim('Message:')} "${entry.message}"`);
-      }
-
-      if (!isLast) {
-        logger.log(`  ${colors.dim(symbols.vertical)}`);
-      }
-    }
-
-    logger.newline();
+    // Display summary
+    displayHistorySummary(entries);
   } catch (error) {
     failSpinner('Failed to load history');
     logger.error(error instanceof Error ? error.message : String(error));

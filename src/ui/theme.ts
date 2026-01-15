@@ -134,3 +134,174 @@ export function formatSize(bytes: number): string {
 export function horizontalLine(length: number = 50): string {
   return colors.dim(symbols.horizontal.repeat(length));
 }
+
+/**
+ * File type icons mapping
+ */
+const fileIcons: Record<string, string> = {
+  // JavaScript/TypeScript
+  js: '󰌞',
+  jsx: '⚛',
+  ts: '󰛦',
+  tsx: '⚛',
+  mjs: '󰌞',
+  cjs: '󰌞',
+
+  // Web
+  html: '󰌝',
+  htm: '󰌝',
+  css: '󰌜',
+  scss: '󰌜',
+  sass: '󰌜',
+  less: '󰌜',
+  svg: '󰜡',
+
+  // Data
+  json: '󰘦',
+  yaml: '󰈙',
+  yml: '󰈙',
+  xml: '󰗀',
+  toml: '󰈙',
+
+  // Config
+  env: '󰒓',
+  gitignore: '󰊢',
+  eslintrc: '󰱺',
+  prettierrc: '󰬗',
+  editorconfig: '󰒓',
+
+  // Docs
+  md: '󰍔',
+  mdx: '󰍔',
+  txt: '󰈙',
+  pdf: '󰈦',
+  doc: '󰈬',
+  docx: '󰈬',
+
+  // Images
+  png: '󰋩',
+  jpg: '󰋩',
+  jpeg: '󰋩',
+  gif: '󰋩',
+  webp: '󰋩',
+  ico: '󰋩',
+
+  // Other languages
+  py: '󰌠',
+  rb: '󰴭',
+  go: '󰟓',
+  rs: '󱘗',
+  java: '󰬷',
+  kt: '󱈙',
+  swift: '󰛥',
+  php: '󰌟',
+  c: '󰙱',
+  cpp: '󰙲',
+  h: '󰙲',
+  cs: '󰌛',
+
+  // Shell
+  sh: '󰆍',
+  bash: '󰆍',
+  zsh: '󰆍',
+  fish: '󰆍',
+
+  // Package
+  lock: '󰌾',
+
+  // Build
+  dockerfile: '󰡨',
+  makefile: '󱁤',
+
+  // Default
+  default: '󰈔',
+  folder: '󰉋',
+};
+
+/**
+ * Simple fallback icons (ASCII-safe)
+ */
+const simpleFileIcons: Record<string, string> = {
+  // JavaScript/TypeScript
+  js: '📜',
+  jsx: '⚛️',
+  ts: '📘',
+  tsx: '⚛️',
+
+  // Web
+  html: '🌐',
+  css: '🎨',
+  scss: '🎨',
+
+  // Data
+  json: '📋',
+  yaml: '📋',
+  yml: '📋',
+  xml: '📋',
+
+  // Config
+  env: '⚙️',
+  gitignore: '🚫',
+
+  // Docs
+  md: '📝',
+  txt: '📄',
+  pdf: '📕',
+
+  // Images
+  png: '🖼️',
+  jpg: '🖼️',
+  jpeg: '🖼️',
+  gif: '🖼️',
+  svg: '🎨',
+
+  // Languages
+  py: '🐍',
+  rb: '💎',
+  go: '🐹',
+  rs: '🦀',
+  java: '☕',
+  php: '🐘',
+  sh: '🐚',
+
+  // Package/Lock
+  lock: '🔒',
+
+  // Build
+  dockerfile: '🐳',
+
+  // Default
+  default: '📄',
+  folder: '📁',
+};
+
+/**
+ * Get file icon by extension or filename
+ */
+export function getFileIcon(filename: string, useNerdFont: boolean = false): string {
+  const icons = useNerdFont ? fileIcons : simpleFileIcons;
+  const lowerName = filename.toLowerCase();
+
+  // Check for special filenames
+  if (lowerName === 'dockerfile') return icons.dockerfile || icons.default;
+  if (lowerName === 'makefile') return icons.makefile || icons.default;
+  if (lowerName.startsWith('.env')) return icons.env || icons.default;
+  if (lowerName === '.gitignore') return icons.gitignore || icons.default;
+  if (lowerName.includes('eslint')) return icons.eslintrc || icons.default;
+  if (lowerName.includes('prettier')) return icons.prettierrc || icons.default;
+  if (lowerName.endsWith('.lock') || lowerName.endsWith('-lock.json') || lowerName.endsWith('.lockb')) {
+    return icons.lock || icons.default;
+  }
+
+  // Get extension
+  const ext = filename.split('.').pop()?.toLowerCase() || '';
+
+  return icons[ext] || icons.default;
+}
+
+/**
+ * Get folder icon
+ */
+export function getFolderIcon(useNerdFont: boolean = false): string {
+  return useNerdFont ? fileIcons.folder : simpleFileIcons.folder;
+}

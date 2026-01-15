@@ -5,13 +5,14 @@ import { createManifest, calculateStats } from '../core/manifest.js';
 import { createArchive, getArchiveSize } from '../core/archive.js';
 import { filterFiles, DEFAULT_EXCLUDES } from '../utils/filters.js';
 import { generateArchiveName } from '../utils/paths.js';
-import { displayBanner, displayRepoInfo, displaySuccessFooter } from '../ui/banner.js';
-import { displayChangesTable, displayStats } from '../ui/table.js';
+import { displayBanner, displayRepoInfo, displayExportSuccess } from '../ui/banner.js';
+import { displayStats } from '../ui/table.js';
+import { displayFileTree, FileEntry } from '../ui/tree.js';
 import { startSpinner, succeedSpinner, failSpinner } from '../ui/spinner.js';
-import { showProgress, completeProgress } from '../ui/progress.js';
+import { DetailedProgressTracker } from '../ui/progress.js';
 import { promptExportMode, promptFileSelection, promptMessage, promptConfirm } from '../ui/prompts.js';
 import { logger } from '../ui/logger.js';
-import { colors } from '../ui/theme.js';
+import { addHistoryEntry } from './history.js';
 
 /**
  * Execute export command
@@ -51,8 +52,14 @@ export async function executeExport(options: ExportOptions): Promise<void> {
     const changesStats = calculateStats(changes);
     const fullStats = calculateStats(allFiles);
 
-    // Display changes
-    displayChangesTable(changes);
+    // Display changes as tree
+    const fileEntries: FileEntry[] = changes.map((c) => ({
+      path: c.path,
+      type: c.type,
+      size: c.size,
+      from: c.from,
+    }));
+    displayFileTree(fileEntries, { title: 'Changes Found', showIcons: true });
     displayStats(changesStats);
 
     // Determine mode
@@ -100,48 +107,57 @@ export async function executeExport(options: ExportOptions): Promise<void> {
     // Determine output path
     const outputPath = options.output || join(repoRoot, generateArchiveName(mode));
 
-    // Create archive
+    // Create archive with detailed progress
     logger.newline();
-    startSpinner('Creating archive...');
-
-    await createArchive(outputPath, manifest, repoRoot, (current, total) => {
-      showProgress(current, total, `${current}/${total} files`);
+    const totalSize = finalChanges.reduce((sum, c) => sum + (c.size || 0), 0);
+    const progress = new DetailedProgressTracker({
+      total: finalChanges.length,
+      totalSize,
+      label: 'Packing files',
     });
 
-    completeProgress();
+    await createArchive(outputPath, manifest, repoRoot, (current: number, total: number) => {
+      const file = finalChanges[current - 1];
+      progress.tick(file?.path || '', file?.size || 0);
+    });
+
+    progress.complete();
     succeedSpinner('Archive created');
 
     // Get archive size
     const archiveSize = await getArchiveSize(outputPath);
-    const sizeStr = formatBytes(archiveSize);
+    const stats = calculateStats(finalChanges);
 
     // Try to copy to clipboard
+    let copiedToClipboard = false;
     try {
       const clipboardy = await import('clipboardy');
       await clipboardy.default.write(outputPath);
-      displaySuccessFooter(
-        `Archive created: ${outputPath}`,
-        `Size: ${sizeStr} · Path copied to clipboard`
-      );
+      copiedToClipboard = true;
     } catch {
-      displaySuccessFooter(`Archive created: ${outputPath}`, `Size: ${sizeStr}`);
+      // Clipboard not available
     }
+
+    // Display success card
+    displayExportSuccess({
+      archivePath: outputPath,
+      archiveSize,
+      fileCount: finalChanges.length,
+      stats: {
+        added: stats.added,
+        modified: stats.modified,
+        deleted: stats.deleted,
+        renamed: stats.renamed,
+      },
+      copiedToClipboard,
+      elapsed: progress.getElapsedFormatted(),
+    });
+
+    // Add to history
+    await addHistoryEntry('export', outputPath, stats, message || undefined);
   } catch (error) {
     failSpinner('Export failed');
     logger.error(error instanceof Error ? error.message : String(error));
     process.exit(1);
   }
-}
-
-/**
- * Format bytes to human readable
- */
-function formatBytes(bytes: number): string {
-  if (bytes === 0) return '0 B';
-
-  const units = ['B', 'KB', 'MB', 'GB'];
-  const i = Math.floor(Math.log(bytes) / Math.log(1024));
-  const value = bytes / Math.pow(1024, i);
-
-  return `${value.toFixed(i > 0 ? 1 : 0)} ${units[i]}`;
 }
