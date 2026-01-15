@@ -6,13 +6,20 @@ import { hashFile, getFileSize, isFile } from '../utils/fs.js';
 let git: SimpleGit | null = null;
 let repoRoot: string | null = null;
 
+interface InitializedGit {
+  git: SimpleGit;
+  root: string;
+}
+
 /**
- * Ensure git is initialized before operations
+ * Get initialized git instance and repo root
+ * Throws if not initialized
  */
-function ensureInitialized(): void {
+function getInitialized(): InitializedGit {
   if (!git || !repoRoot) {
     throw new Error('Git not initialized. Call initGit() first.');
   }
+  return { git, root: repoRoot };
 }
 
 /**
@@ -50,23 +57,23 @@ export function isGitInitialized(): boolean {
  * Get the repository root path
  */
 export function getRepoRoot(): string {
-  ensureInitialized();
-  return repoRoot!;
+  const { root } = getInitialized();
+  return root;
 }
 
 /**
  * Get source information about the repository
  */
 export async function getSourceInfo(): Promise<SourceInfo> {
-  ensureInitialized();
+  const { git, root } = getInitialized();
   const [branch, commit, status] = await Promise.all([
-    git!.revparse(['--abbrev-ref', 'HEAD']),
-    git!.revparse(['--short', 'HEAD']),
-    git!.status(),
+    git.revparse(['--abbrev-ref', 'HEAD']),
+    git.revparse(['--short', 'HEAD']),
+    git.status(),
   ]);
 
   return {
-    repo: getRepoName(repoRoot!),
+    repo: getRepoName(root),
     branch: branch.trim(),
     commit: commit.trim(),
     dirty: !status.isClean(),
@@ -77,16 +84,16 @@ export async function getSourceInfo(): Promise<SourceInfo> {
  * Get status of all files in the repo
  */
 export async function getStatus(): Promise<StatusResult> {
-  ensureInitialized();
-  return git!.status();
+  const { git } = getInitialized();
+  return git.status();
 }
 
 /**
  * Get all tracked files in the repository
  */
 export async function getTrackedFiles(): Promise<string[]> {
-  ensureInitialized();
-  const result = await git!.raw(['ls-files']);
+  const { git } = getInitialized();
+  const result = await git.raw(['ls-files']);
   return result
     .trim()
     .split('\n')
@@ -98,8 +105,8 @@ export async function getTrackedFiles(): Promise<string[]> {
  * Get untracked files (not in .gitignore)
  */
 export async function getUntrackedFiles(): Promise<string[]> {
-  ensureInitialized();
-  const result = await git!.raw(['ls-files', '--others', '--exclude-standard']);
+  const { git } = getInitialized();
+  const result = await git.raw(['ls-files', '--others', '--exclude-standard']);
   return result
     .trim()
     .split('\n')
@@ -111,9 +118,9 @@ export async function getUntrackedFiles(): Promise<string[]> {
  * Get list of submodule paths (gitlinks with mode 160000)
  */
 export async function getSubmodules(): Promise<Set<string>> {
-  ensureInitialized();
+  const { git } = getInitialized();
   try {
-    const result = await git!.raw(['ls-files', '--stage']);
+    const result = await git.raw(['ls-files', '--stage']);
     const submodules = new Set<string>();
 
     for (const line of result.split('\n')) {
@@ -138,8 +145,8 @@ export async function getSubmodules(): Promise<Set<string>> {
  * Detect all changes (staged, unstaged, untracked)
  */
 export async function detectChanges(): Promise<DetectedChange[]> {
-  ensureInitialized();
-  const status = await git!.status();
+  const { git, root } = getInitialized();
+  const status = await git.status();
   const changes: DetectedChange[] = [];
   const processedPaths = new Set<string>();
 
@@ -159,7 +166,7 @@ export async function detectChanges(): Promise<DetectedChange[]> {
 
     processedPaths.add(path);
 
-    const fullPath = `${repoRoot!}/${path}`;
+    const fullPath = `${root}/${path}`;
 
     // For non-delete operations, only add if it's actually a file
     if (type !== 'delete') {
@@ -212,6 +219,7 @@ export async function detectChanges(): Promise<DetectedChange[]> {
  * Get all files for full snapshot
  */
 export async function getAllFiles(): Promise<DetectedChange[]> {
+  const { root } = getInitialized();
   const [trackedFiles, untrackedFiles] = await Promise.all([
     getTrackedFiles(),
     getUntrackedFiles(),
@@ -221,7 +229,7 @@ export async function getAllFiles(): Promise<DetectedChange[]> {
   const changes: DetectedChange[] = [];
 
   for (const filePath of allFiles) {
-    const fullPath = `${repoRoot!}/${filePath}`;
+    const fullPath = `${root}/${filePath}`;
 
     if (isFile(fullPath)) {
       const size = await getFileSize(fullPath);
@@ -237,8 +245,8 @@ export async function getAllFiles(): Promise<DetectedChange[]> {
  * Check if a file is modified locally (has uncommitted changes)
  */
 export async function isFileModifiedLocally(filePath: string): Promise<boolean> {
-  ensureInitialized();
-  const status = await git!.status();
+  const { git } = getInitialized();
+  const status = await git.status();
   const normalizedPath = normalizePath(filePath);
 
   return (
