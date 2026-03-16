@@ -1,5 +1,5 @@
 {
-  "name": "@itu-dev/sync-kit",
+  "name": "@itu_npm/sync-kit",
   "version": "1.0.0",
   "description": "CLI utility for transferring code changes between computers via text archives",
   "type": "module",
