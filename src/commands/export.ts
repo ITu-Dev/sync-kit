@@ -96,12 +96,22 @@ export async function executeExport(options: ExportOptions): Promise<void> {
     if (!options.quick) {
       // Interactive mode
       if (changes.length === 0 && !options.mode) {
-        const proceed = await promptConfirm('No changes detected. Export full snapshot?', true);
-        if (!proceed) {
+        logger.warn('No changes detected');
+        const { noChangesMode } = await (await import('inquirer')).default.prompt([{
+          type: 'list',
+          name: 'noChangesMode',
+          message: 'What would you like to export?',
+          choices: [
+            { name: `Full snapshot (${fullStats.added} files)`, value: 'full' },
+            { name: 'Specific directories...', value: 'directories' },
+            { name: 'Cancel', value: 'cancel' },
+          ],
+        }]);
+        if (noChangesMode === 'cancel') {
           logger.info('Export cancelled');
           return;
         }
-        mode = 'full';
+        mode = noChangesMode;
       } else if (!options.mode) {
         const selectedMode = await promptExportMode(changesStats, fullStats);
 
