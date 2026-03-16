@@ -54,7 +54,7 @@ export interface Manifest {
   /** Source repository info */
   source: SourceInfo;
   /** Export mode */
-  mode: 'changes' | 'full';
+  mode: 'changes' | 'full' | 'directories';
   /** Optional user message */
   message?: string;
   /** Statistics */
@@ -68,7 +68,7 @@ export interface Manifest {
  */
 export interface ExportOptions {
   /** Export only changes (default) or full snapshot */
-  mode?: 'changes' | 'full';
+  mode?: 'changes' | 'full' | 'directories';
   /** Output file path */
   output?: string;
   /** Quick mode - no prompts */
@@ -79,6 +79,12 @@ export interface ExportOptions {
   include?: string[];
   /** User message to attach */
   message?: string;
+  /** Custom archive name (auto-appends .zip if needed) */
+  name?: string;
+  /** Include media files (images, svg, fonts, etc.) — excluded by default */
+  includeMedia?: boolean;
+  /** Specific directories to export (for 'directories' mode) */
+  directories?: string[];
 }
 
 /**

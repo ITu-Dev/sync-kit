@@ -25,17 +25,23 @@ export function createProgram(): Command {
     .option('-f, --full', 'Export full repository snapshot')
     .option('-q, --quick', 'Quick mode - no interactive prompts')
     .option('-o, --output <path>', 'Output archive path')
+    .option('-n, --name <name>', 'Custom archive name (auto-appends .zip)')
     .option('-m, --message <text>', 'Add a description message')
     .option('-e, --exclude <pattern...>', 'Exclude files matching pattern')
     .option('-i, --include <pattern...>', 'Include only files matching pattern')
+    .option('--include-media', 'Include media files (images, svg, fonts — excluded by default)')
+    .option('-D, --dirs <dirs...>', 'Export only specific directories')
     .action(async (opts) => {
       await executeExport({
-        mode: opts.full ? 'full' : opts.changes ? 'changes' : undefined,
+        mode: opts.dirs ? 'directories' : opts.full ? 'full' : opts.changes ? 'changes' : undefined,
         quick: opts.quick,
         output: opts.output,
+        name: opts.name,
         message: opts.message,
         exclude: opts.exclude,
         include: opts.include,
+        includeMedia: opts.includeMedia,
+        directories: opts.dirs,
       });
     });
 

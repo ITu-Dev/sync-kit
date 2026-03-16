@@ -9,7 +9,7 @@ import { displayCompactStats } from './table.js';
 export async function promptExportMode(
   changesStats: ExportStats,
   fullStats: ExportStats
-): Promise<'changes' | 'full' | 'custom'> {
+): Promise<'changes' | 'full' | 'custom' | 'directories'> {
   const changesLabel = `Changes only (${displayCompactStats(changesStats)})`;
   const fullLabel = `Full snapshot (${fullStats.added} files)`;
 
@@ -21,13 +21,45 @@ export async function promptExportMode(
       choices: [
         { name: changesLabel, value: 'changes' },
         { name: fullLabel, value: 'full' },
-        { name: 'Custom selection...', value: 'custom' },
+        { name: 'Specific directories...', value: 'directories' },
+        { name: 'Custom file selection...', value: 'custom' },
       ],
       default: 'changes',
     },
   ]);
 
   return mode;
+}
+
+/**
+ * Prompt for directory selection from available top-level directories
+ */
+export async function promptDirectorySelection(
+  availableDirs: string[]
+): Promise<string[]> {
+  const choices = availableDirs.map((dir) => ({
+    name: dir + '/',
+    value: dir,
+    checked: false,
+  }));
+
+  const { selected } = await inquirer.prompt([
+    {
+      type: 'checkbox',
+      name: 'selected',
+      message: 'Select directories to export:',
+      choices,
+      pageSize: 20,
+      validate: (answer: string[]) => {
+        if (answer.length === 0) {
+          return 'Select at least one directory';
+        }
+        return true;
+      },
+    },
+  ]);
+
+  return selected;
 }
 
 /**
@@ -116,6 +148,22 @@ export async function promptMessage(defaultMessage?: string): Promise<string> {
   ]);
 
   return message.trim();
+}
+
+/**
+ * Prompt for custom archive name
+ */
+export async function promptArchiveName(defaultName: string): Promise<string> {
+  const { name } = await inquirer.prompt([
+    {
+      type: 'input',
+      name: 'name',
+      message: 'Archive name:',
+      default: defaultName,
+    },
+  ]);
+
+  return name.trim();
 }
 
 /**

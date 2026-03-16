@@ -49,9 +49,9 @@ export function generateTimestamp(): string {
 /**
  * Generate default archive filename
  */
-export function generateArchiveName(mode: 'changes' | 'full' = 'changes'): string {
+export function generateArchiveName(mode: 'changes' | 'full' | 'directories' = 'changes'): string {
   const timestamp = generateTimestamp();
-  const prefix = mode === 'full' ? 'snapshot' : 'sync';
+  const prefix = mode === 'full' ? 'snapshot' : mode === 'directories' ? 'dirs' : 'sync';
   return `${prefix}_${timestamp}.zip`;
 }
 

@@ -8,7 +8,7 @@ const MANIFEST_VERSION = '1.0';
 export function createManifest(
   changes: DetectedChange[],
   source: SourceInfo,
-  mode: 'changes' | 'full',
+  mode: 'changes' | 'full' | 'directories',
   message?: string
 ): Manifest {
   const operations: FileOperation[] = changes.map((change) => {
