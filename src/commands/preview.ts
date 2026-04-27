@@ -1,7 +1,7 @@
 import { PreviewOptions } from '../types/index.js';
 import { readArchive, getManifestFromArchive, getFileFromArchive, listArchiveEntries, getArchiveSize } from '../core/archive.js';
 import { fileExists } from '../utils/fs.js';
-import { displayBanner, displayArchiveInfo } from '../ui/banner.js';
+import { displayBanner, displayArchiveInfo, displayBundleInfo } from '../ui/banner.js';
 import { displayOperationsTable, displayStats } from '../ui/table.js';
 import { startSpinner, succeedSpinner, failSpinner } from '../ui/spinner.js';
 import { logger } from '../ui/logger.js';
@@ -50,6 +50,11 @@ export async function executePreview(
     // Display operations
     displayOperationsTable(manifest.operations);
     displayStats(manifest.stats);
+
+    // Display embedded history bundle info, if any
+    if (manifest.history) {
+      displayBundleInfo(manifest.history);
+    }
 
     // Show file contents if requested
     if (options.contents) {

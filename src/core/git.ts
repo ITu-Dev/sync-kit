@@ -255,3 +255,25 @@ export async function isFileModifiedLocally(filePath: string): Promise<boolean> 
     status.not_added.some((f) => normalizePath(f) === normalizedPath)
   );
 }
+
+/**
+ * Get the currently checked-out branch (returns 'HEAD' if detached).
+ */
+export async function getCurrentBranch(): Promise<string> {
+  const { git } = getInitialized();
+  return (await git.revparse(['--abbrev-ref', 'HEAD'])).trim();
+}
+
+/**
+ * Checkout a branch (or any ref) by name in the initialised repo.
+ * `force=true` resets the working tree to the ref's tip even when we
+ * are already on the same branch (e.g. after a force-fetch updated the
+ * ref under our feet).
+ */
+export async function checkoutRef(ref: string, force = false): Promise<void> {
+  const { git } = getInitialized();
+  const args = ['checkout'];
+  if (force) args.push('-f');
+  args.push(ref);
+  await git.raw(args);
+}

@@ -1,4 +1,4 @@
-import { Manifest, FileOperation, SourceInfo, ExportStats, DetectedChange } from '../types/index.js';
+import { Manifest, FileOperation, SourceInfo, ExportStats, DetectedChange, HistoryMetadata } from '../types/index.js';
 
 const MANIFEST_VERSION = '1.0';
 
@@ -8,8 +8,9 @@ const MANIFEST_VERSION = '1.0';
 export function createManifest(
   changes: DetectedChange[],
   source: SourceInfo,
-  mode: 'changes' | 'full' | 'directories',
-  message?: string
+  mode: 'changes' | 'full' | 'directories' | 'history',
+  message?: string,
+  history?: HistoryMetadata
 ): Manifest {
   const operations: FileOperation[] = changes.map((change) => {
     const op: FileOperation = {
@@ -32,7 +33,7 @@ export function createManifest(
 
   const stats = calculateStats(changes);
 
-  return {
+  const manifest: Manifest = {
     version: MANIFEST_VERSION,
     created: new Date().toISOString(),
     source,
@@ -41,6 +42,12 @@ export function createManifest(
     stats,
     operations,
   };
+
+  if (history) {
+    manifest.history = history;
+  }
+
+  return manifest;
 }
 
 /**
@@ -151,6 +158,22 @@ export function getManifestSummary(manifest: Manifest): string {
         line = `  ? ${op.path}`;
     }
     lines.push(line);
+  }
+
+  if (manifest.history) {
+    lines.push(
+      ``,
+      `History bundle:`,
+      `  Branches: ${manifest.history.branchCount}`,
+      `  Tags: ${manifest.history.tagCount}`,
+      `  Complete: ${manifest.history.complete ? 'Yes' : 'No (incremental)'}`,
+      `  Bundle size: ${formatBytes(manifest.history.bundleSize)}`,
+      ``,
+      `Refs:`
+    );
+    for (const ref of manifest.history.refs) {
+      lines.push(`  ${ref.sha.slice(0, 7)} ${ref.name}`);
+    }
   }
 
   return lines.join('\n');

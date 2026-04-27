@@ -1,8 +1,11 @@
 import { join } from 'node:path';
-import { ExportOptions, DetectedChange } from '../types/index.js';
+import { tmpdir } from 'node:os';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { ExportOptions, DetectedChange, HistoryMetadata } from '../types/index.js';
 import { initGit, getRepoRoot, getSourceInfo, detectChanges, getAllFiles } from '../core/git.js';
 import { createManifest, calculateStats } from '../core/manifest.js';
 import { createArchive, getArchiveSize } from '../core/archive.js';
+import { createBundle } from '../core/bundle.js';
 import { filterFiles, findMediaFiles, filterByDirectories } from '../utils/filters.js';
 import { generateArchiveName } from '../utils/paths.js';
 import { displayBanner, displayRepoInfo, displayExportSuccess } from '../ui/banner.js';
@@ -15,10 +18,44 @@ import { logger } from '../ui/logger.js';
 import { addHistoryEntry } from './history.js';
 
 /**
+ * Validate that the requested combination of flags is supported.
+ * History bundles cover the entire repo, so partial-file selectors
+ * (--dirs, --include, --exclude) would produce a working tree that
+ * does not match the bundle's HEAD — we reject those combinations
+ * up front rather than silently producing inconsistent state.
+ */
+function validateExportOptions(options: ExportOptions): void {
+  if (options.historyOnly) {
+    if (options.mode && options.mode !== 'history') {
+      throw new Error('--history-only is mutually exclusive with -c/--changes, -f/--full, -D/--dirs');
+    }
+    if (options.directories?.length) {
+      throw new Error('--history-only is mutually exclusive with -D/--dirs');
+    }
+  }
+
+  if (options.withHistory) {
+    if (options.mode === 'directories' || options.directories?.length) {
+      throw new Error('Cannot combine --with-history with --dirs (partial directory export). Use --changes --with-history, or --history-only.');
+    }
+    if (options.include?.length || options.exclude?.length) {
+      throw new Error('Cannot combine --with-history with --include/--exclude. Use --changes --with-history, or --history-only.');
+    }
+  }
+}
+
+/**
  * Execute export command
  */
 export async function executeExport(options: ExportOptions): Promise<void> {
   try {
+    validateExportOptions(options);
+
+    if (options.historyOnly || options.mode === 'history') {
+      await executeHistoryOnlyExport(options);
+      return;
+    }
+
     // Display banner
     displayBanner('Export Changes');
 
@@ -90,7 +127,7 @@ export async function executeExport(options: ExportOptions): Promise<void> {
     displayStats(changesStats);
 
     // Determine mode
-    let mode: 'changes' | 'full' | 'directories' = options.mode || 'changes';
+    let mode: 'changes' | 'full' | 'directories' | 'history' = options.mode || 'changes';
     let selectedChanges: DetectedChange[] = changes;
 
     if (!options.quick) {
@@ -170,8 +207,26 @@ export async function executeExport(options: ExportOptions): Promise<void> {
       message = await promptMessage();
     }
 
+    // Optionally create git history bundle
+    let bundlePath: string | undefined;
+    let bundleTmpDir: string | undefined;
+    let historyMeta: HistoryMetadata | undefined;
+    if (options.withHistory) {
+      bundleTmpDir = await mkdtemp(join(tmpdir(), 'sync-kit-bundle-'));
+      bundlePath = join(bundleTmpDir, 'repo.pack');
+      startSpinner('Creating git bundle...');
+      try {
+        historyMeta = await createBundle(repoRoot, bundlePath, options.branches, options.noTags);
+        succeedSpinner(`Bundle created (${historyMeta.branchCount} branches, ${historyMeta.tagCount} tags)`);
+      } catch (err) {
+        failSpinner('Failed to create git bundle');
+        await rm(bundleTmpDir, { recursive: true, force: true });
+        throw err;
+      }
+    }
+
     // Create manifest
-    const manifest = createManifest(finalChanges, sourceInfo, mode, message || undefined);
+    const manifest = createManifest(finalChanges, sourceInfo, mode, message || undefined, historyMeta);
 
     // Determine output path
     let archiveName = generateArchiveName(mode);
@@ -196,13 +251,23 @@ export async function executeExport(options: ExportOptions): Promise<void> {
       label: 'Packing files',
     });
 
-    await createArchive(outputPath, manifest, repoRoot, (current: number, total: number) => {
-      const file = finalChanges[current - 1];
-      progress.tick(file?.path || '', file?.size || 0);
-    });
+    await createArchive(
+      outputPath,
+      manifest,
+      repoRoot,
+      (current: number, total: number) => {
+        const file = finalChanges[current - 1];
+        progress.tick(file?.path || '', file?.size || 0);
+      },
+      bundlePath
+    );
 
     progress.complete();
     succeedSpinner('Archive created');
+
+    if (bundleTmpDir) {
+      await rm(bundleTmpDir, { recursive: true, force: true });
+    }
 
     // Get archive size
     const archiveSize = await getArchiveSize(outputPath);
@@ -240,4 +305,80 @@ export async function executeExport(options: ExportOptions): Promise<void> {
     logger.error(error instanceof Error ? error.message : String(error));
     process.exit(1);
   }
+}
+
+/**
+ * Run a bundle-only export (no working-tree files, only the git history bundle).
+ */
+async function executeHistoryOnlyExport(options: ExportOptions): Promise<void> {
+  displayBanner('Export History');
+
+  startSpinner('Scanning repository...');
+  await initGit(process.cwd());
+  const repoRoot = getRepoRoot();
+  const sourceInfo = await getSourceInfo();
+  succeedSpinner('Repository scanned');
+
+  displayRepoInfo(sourceInfo);
+
+  const bundleTmpDir = await mkdtemp(join(tmpdir(), 'sync-kit-bundle-'));
+  const bundlePath = join(bundleTmpDir, 'repo.pack');
+  let historyMeta: HistoryMetadata;
+
+  startSpinner('Creating git bundle...');
+  try {
+    historyMeta = await createBundle(repoRoot, bundlePath, options.branches, options.noTags);
+    succeedSpinner(`Bundle created (${historyMeta.branchCount} branches, ${historyMeta.tagCount} tags)`);
+  } catch (err) {
+    failSpinner('Failed to create git bundle');
+    await rm(bundleTmpDir, { recursive: true, force: true });
+    throw err;
+  }
+
+  let message = options.message;
+  if (!options.quick && !message) {
+    message = await promptMessage();
+  }
+
+  const manifest = createManifest([], sourceInfo, 'history', message || undefined, historyMeta);
+
+  let archiveName = generateArchiveName('history');
+  if (options.name) {
+    archiveName = options.name.endsWith('.zip') ? options.name : `${options.name}.zip`;
+  } else if (!options.quick && !options.output) {
+    const customName = await promptArchiveName(archiveName);
+    if (customName) {
+      archiveName = customName.endsWith('.zip') ? customName : `${customName}.zip`;
+    }
+  }
+
+  const outputPath = options.output || join(repoRoot, archiveName);
+
+  startSpinner('Packing archive...');
+  await createArchive(outputPath, manifest, repoRoot, undefined, bundlePath);
+  succeedSpinner('Archive created');
+
+  await rm(bundleTmpDir, { recursive: true, force: true });
+
+  const archiveSize = await getArchiveSize(outputPath);
+
+  let copiedToClipboard = false;
+  try {
+    const clipboardy = await import('clipboardy');
+    await clipboardy.default.write(outputPath);
+    copiedToClipboard = true;
+  } catch {
+    // Clipboard not available
+  }
+
+  displayExportSuccess({
+    archivePath: outputPath,
+    archiveSize,
+    fileCount: 0,
+    stats: { added: 0, modified: 0, deleted: 0, renamed: 0 },
+    copiedToClipboard,
+    elapsed: '',
+  });
+
+  await addHistoryEntry('export', outputPath, manifest.stats, message || undefined);
 }

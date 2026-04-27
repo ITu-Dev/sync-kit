@@ -1,21 +1,25 @@
 import archiver from 'archiver';
 import AdmZip from 'adm-zip';
 import { createWriteStream } from 'node:fs';
-import { writeFile, stat } from 'node:fs/promises';
+import { writeFile, stat, mkdtemp } from 'node:fs/promises';
 import { join } from 'node:path';
+import { tmpdir } from 'node:os';
 import { Manifest, FileOperation } from '../types/index.js';
 import { serializeManifest, parseManifest, getManifestSummary } from './manifest.js';
 import { getArchiveFilePath } from '../utils/paths.js';
 import { ensureParentDir } from '../utils/fs.js';
 
+const BUNDLE_ENTRY = 'meta/repo.pack';
+
 /**
- * Create a zip archive with manifest and files
+ * Create a zip archive with manifest, files, and optional history bundle.
  */
 export async function createArchive(
   outputPath: string,
   manifest: Manifest,
   repoRoot: string,
-  onProgress?: (current: number, total: number) => void
+  onProgress?: (current: number, total: number) => void,
+  bundlePath?: string
 ): Promise<void> {
   await ensureParentDir(outputPath);
 
@@ -30,13 +34,13 @@ export async function createArchive(
 
     archive.pipe(output);
 
-    // Add manifest.json
     archive.append(serializeManifest(manifest), { name: 'manifest.json' });
-
-    // Add human-readable info
     archive.append(getManifestSummary(manifest), { name: 'meta/info.txt' });
 
-    // Add files
+    if (bundlePath) {
+      archive.file(bundlePath, { name: BUNDLE_ENTRY });
+    }
+
     const filesToAdd = manifest.operations.filter((op) => op.type !== 'delete');
     let processed = 0;
 
@@ -52,6 +56,32 @@ export async function createArchive(
 
     archive.finalize();
   });
+}
+
+/**
+ * Check whether the archive contains an embedded git bundle.
+ */
+export function hasBundleInArchive(zip: AdmZip): boolean {
+  return zip.getEntry(BUNDLE_ENTRY) !== null;
+}
+
+/**
+ * Extract the bundle from the archive into a temp file. Returns the file path.
+ * Caller is responsible for cleaning up the parent temp directory.
+ */
+export async function extractBundleFromArchive(zip: AdmZip): Promise<string> {
+  const entry = zip.getEntry(BUNDLE_ENTRY);
+  if (!entry) {
+    throw new Error('Archive does not contain a bundle');
+  }
+  const tmpDir = await mkdtemp(join(tmpdir(), 'sync-kit-'));
+  const bundlePath = join(tmpDir, 'repo.pack');
+  const buffer = zip.readFile(entry);
+  if (!buffer) {
+    throw new Error('Failed to read bundle from archive');
+  }
+  await writeFile(bundlePath, buffer);
+  return bundlePath;
 }
 
 /**

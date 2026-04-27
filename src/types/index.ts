@@ -44,6 +44,37 @@ export interface ExportStats {
 }
 
 /**
+ * Git ref recorded in a history bundle
+ */
+export interface BundleRef {
+  /** Ref name (e.g. "refs/heads/main", "refs/tags/v1.0") */
+  name: string;
+  /** Full SHA-1 of the ref tip */
+  sha: string;
+}
+
+/**
+ * Metadata about the embedded git bundle (when present)
+ */
+export interface HistoryMetadata {
+  /** Refs included in the bundle */
+  refs: BundleRef[];
+  /** Total number of branches included */
+  branchCount: number;
+  /** Total number of tags included */
+  tagCount: number;
+  /** Whether the bundle records complete history (vs. incremental) */
+  complete: boolean;
+  /** Bundle file size in bytes */
+  bundleSize: number;
+}
+
+/**
+ * Strategy for applying bundle refs into the target repository
+ */
+export type HistoryStrategy = 'safe' | 'fast-forward' | 'force';
+
+/**
  * Manifest file structure
  */
 export interface Manifest {
@@ -54,21 +85,23 @@ export interface Manifest {
   /** Source repository info */
   source: SourceInfo;
   /** Export mode */
-  mode: 'changes' | 'full' | 'directories';
+  mode: 'changes' | 'full' | 'directories' | 'history';
   /** Optional user message */
   message?: string;
   /** Statistics */
   stats: ExportStats;
   /** List of file operations */
   operations: FileOperation[];
+  /** Git history metadata (present when archive contains a bundle) */
+  history?: HistoryMetadata;
 }
 
 /**
  * Export command options
  */
 export interface ExportOptions {
-  /** Export only changes (default) or full snapshot */
-  mode?: 'changes' | 'full' | 'directories';
+  /** Export only changes (default), full snapshot, directory subset, or history-only */
+  mode?: 'changes' | 'full' | 'directories' | 'history';
   /** Output file path */
   output?: string;
   /** Quick mode - no prompts */
@@ -85,6 +118,14 @@ export interface ExportOptions {
   includeMedia?: boolean;
   /** Specific directories to export (for 'directories' mode) */
   directories?: string[];
+  /** Add git history bundle alongside working-tree files */
+  withHistory?: boolean;
+  /** Bundle only — no working-tree files (sets mode='history') */
+  historyOnly?: boolean;
+  /** Branches/tags to include in bundle. Default: all local heads + tags */
+  branches?: string[];
+  /** Skip tags in bundle */
+  noTags?: boolean;
 }
 
 /**
@@ -99,6 +140,14 @@ export interface ImportOptions {
   noBackup?: boolean;
   /** Force - no confirmations */
   force?: boolean;
+  /** Skip applying the embedded bundle */
+  noHistory?: boolean;
+  /** How to apply refs from bundle */
+  historyStrategy?: HistoryStrategy;
+  /** Run `git checkout <branch>` after fetching, before applying files/ */
+  checkout?: boolean;
+  /** If target is empty / not a git repo, init or clone from bundle */
+  initIfEmpty?: boolean;
 }
 
 /**

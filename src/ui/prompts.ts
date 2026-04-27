@@ -1,7 +1,27 @@
 import inquirer from 'inquirer';
 import { colors } from './theme.js';
-import { DetectedChange, FileOperation, ExportStats } from '../types/index.js';
+import { DetectedChange, FileOperation, ExportStats, HistoryStrategy } from '../types/index.js';
 import { displayCompactStats } from './table.js';
+
+/**
+ * Ask the user how to apply bundle refs into the local repository.
+ */
+export async function promptHistoryStrategy(): Promise<HistoryStrategy> {
+  const { strategy } = await inquirer.prompt([
+    {
+      type: 'list',
+      name: 'strategy',
+      message: 'How should the bundle refs be applied?',
+      choices: [
+        { name: 'Safe — fetch into refs/sync-kit/* (your branches stay untouched)', value: 'safe' },
+        { name: 'Fast-forward — update refs/heads/* (refuses on diverge)', value: 'fast-forward' },
+        { name: 'Force — overwrite refs/heads/* (DANGEROUS, may lose commits)', value: 'force' },
+      ],
+      default: 'safe',
+    },
+  ]);
+  return strategy;
+}
 
 /**
  * Prompt for export mode selection

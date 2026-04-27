@@ -1,6 +1,9 @@
 import { colors } from './theme.js';
+import { logger } from './logger.js';
+import { HistoryMetadata } from '../types/index.js';
+import { filesize } from 'filesize';
 
-const VERSION = '1.0.0';
+const VERSION = '1.1.0';
 
 /**
  * ASCII art logo for sync-kit
@@ -314,4 +317,20 @@ export function displayImportSuccess(options: {
     ],
     stats,
   });
+}
+
+/**
+ * Display a block describing an embedded history bundle.
+ */
+export function displayBundleInfo(history: HistoryMetadata): void {
+  logger.section('Git history bundle');
+  logger.keyValue('Branches', String(history.branchCount));
+  logger.keyValue('Tags', String(history.tagCount));
+  logger.keyValue('Complete', history.complete ? 'Yes' : 'No (incremental)');
+  logger.keyValue('Bundle size', filesize(history.bundleSize) as string);
+  logger.newline();
+  logger.log('  Refs:');
+  for (const ref of history.refs) {
+    logger.log(`    ${colors.cyan(ref.sha.slice(0, 7))} ${ref.name}`);
+  }
 }

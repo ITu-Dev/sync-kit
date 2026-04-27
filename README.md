@@ -104,6 +104,79 @@ sk history --clear
 
 ---
 
+## Перенос git-истории
+
+`sync-kit` умеет переносить полную историю коммитов через тот же ZIP-архив. Под капотом — `git bundle` (нативный механизм git, сохраняет все commit-хеши, ветки, теги).
+
+### Экспорт с историей
+
+```bash
+# Архив с рабочими изменениями + историей всех веток и тегов
+sk export --with-history
+
+# Только история, без рабочих файлов
+sk export --history-only
+
+# Только определённые ветки в bundle
+sk export --history-only --branches main develop
+
+# История без тегов
+sk export --history-only --no-tags
+```
+
+### Импорт с применением истории
+
+```bash
+# По умолчанию — safe: refs кладутся в refs/sync-kit/*, локальные ветки не трогаются
+sk import archive.zip
+
+# Обновить refs/heads/* (отказывается на non-fast-forward)
+sk import archive.zip --history-strategy fast-forward
+
+# Перезаписать refs/heads/* (DANGEROUS, может потерять локальные коммиты)
+sk import archive.zip --history-strategy force
+
+# После fetch синхронизировать рабочее дерево с новым HEAD
+sk import archive.zip --history-strategy fast-forward --checkout
+
+# Развернуть репо в пустую папку (init + fetch + checkout)
+# Checkout-ится та ветка, что была HEAD на источнике
+mkdir new-clone && sk import archive.zip -t ./new-clone --init-if-empty -f
+
+# Игнорировать bundle, применить только файлы
+sk import archive.zip --no-history
+```
+
+### Совместимость флагов
+
+| Режим | `--with-history` | Поведение |
+|---|---|---|
+| `--changes` (по умолчанию) | да | дельты + bundle (главный сценарий двусторонней синхронизации) |
+| `--full` | да | разрешено, но bundle избыточен (full уже содержит всё что в HEAD) |
+| `--dirs` / `--include` / `--exclude` | да | **ошибка** — частичный перенос файлов несовместим с переносом истории |
+| `--history-only` | n/a | только bundle, без файлов |
+
+### Стратегии применения refs
+
+- **safe** (по умолчанию): `git fetch <bundle> 'refs/heads/*:refs/sync-kit/*'`. Локальные ветки не трогаются. Дальше — `git merge refs/sync-kit/main` руками.
+- **fast-forward**: `git fetch --update-head-ok <bundle> 'refs/heads/*:refs/heads/*'`. Стандартное поведение fetch — отказывается на non-fast-forward.
+- **force**: `git fetch --update-head-ok <bundle> '+refs/heads/*:refs/heads/*'`. Перезаписывает локальные ветки. Используй осознанно.
+
+### Что переносится
+
+Bundle содержит:
+- всю историю всех **локальных** веток (без `refs/remotes/*`)
+- теги (если не передан `--no-tags`)
+- все нужные git-объекты (commits, trees, blobs)
+
+Bundle НЕ содержит: рабочее дерево, индекс, stash, hooks, конфиги. Working tree переносится отдельно через `files/` (стандартный flow sync-kit).
+
+### Требование
+
+На принимающей стороне должен быть установлен `git` в `PATH` — `sync-kit` использует его как backend.
+
+---
+
 ## Команды
 
 | Команда | Описание |
@@ -111,6 +184,8 @@ sk history --clear
 | `sk export` | Экспорт изменений (интерактивно) |
 | `sk q` | Быстрый экспорт без вопросов |
 | `sk export --full` | Экспорт всего проекта |
+| `sk export --with-history` | Экспорт + git-история |
+| `sk export --history-only` | Только git-история, без файлов |
 | `sk import <file>` | Импорт архива |
 | `sk preview <file>` | Просмотр содержимого архива |
 | `sk history` | История синхронизаций |
@@ -126,6 +201,10 @@ sk history --clear
 | `-m, --message <text>` | Описание изменений |
 | `-e, --exclude <pattern>` | Исключить файлы (можно несколько раз) |
 | `-i, --include <pattern>` | Включить только указанные файлы |
+| `--with-history` | Добавить git bundle (история всех локальных веток + теги) |
+| `--history-only` | Bundle вместо файлов (`-c`/`-f`/`-D` запрещены) |
+| `--branches <list...>` | Конкретные ветки/теги в bundle (по умолчанию — все локальные) |
+| `--no-tags` | Не включать теги в bundle |
 
 ### Флаги import
 
@@ -135,6 +214,10 @@ sk history --clear
 | `-d, --dry-run` | Показать что будет сделано |
 | `-n, --no-backup` | Не создавать бэкап |
 | `-f, --force` | Без подтверждений |
+| `--no-history` | Игнорировать bundle в архиве |
+| `--history-strategy <mode>` | `safe` (default) / `fast-forward` / `force` |
+| `--checkout` | После fetch синхронизировать WT с новым HEAD |
+| `--init-if-empty` | Если target не git-репо — `git init` + развернуть из bundle |
 
 ---
 
@@ -253,12 +336,41 @@ npm install
 # Запуск в режиме разработки
 npm run dev -- export
 
+# Прогон тестов
+npm test
+
 # Сборка TypeScript
 npm run build
 
-# Сборка в один файл
+# Сборка в один JS-файл (esbuild)
 npm run bundle
+
+# Сборка standalone-бинарей под все платформы (~3-5 минут)
+npm run binary
+# → bin/sync-kit-macos-arm64, bin/sync-kit-macos-x64,
+#   bin/sync-kit-linux-x64, bin/sync-kit-linux-arm64,
+#   bin/sync-kit-win-x64.exe (~48 MB каждый)
 ```
+
+### Установка из бинаря (без Node.js)
+
+Скачай нужную платформу из [GitHub Releases](https://github.com/itu-dev/sync-kit/releases):
+
+```bash
+# macOS arm64 пример
+curl -L https://github.com/itu-dev/sync-kit/releases/latest/download/sync-kit-macos-arm64 -o /usr/local/bin/sk
+chmod +x /usr/local/bin/sk
+sk --version
+```
+
+На macOS при первом запуске может быть Gatekeeper warning — `Right-click → Open` один раз.
+
+**Важно:** `git` всё равно должен быть в `PATH` — sync-kit вызывает его как backend.
+
+### CI/CD
+
+- `.github/workflows/ci.yml` — на каждый push/PR в `main`: vitest + tsc + esbuild
+- `.github/workflows/release.yml` — при пуше тега `v*` (или вручную через `workflow_dispatch`): тесты → сборка бинарей под 5 платформ → GitHub Release с прикреплёнными бинарями и `SHA256SUMS.txt`
 
 ## Структура проекта
 
