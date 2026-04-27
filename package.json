@@ -20,7 +20,8 @@
     "start": "node dist/index.js",
     "dev": "tsx src/index.ts",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "binary": "npm run bundle && pkg bundle/sync-kit.cjs --out-path bin --targets node20-macos-arm64,node20-macos-x64,node20-linux-x64,node20-linux-arm64,node20-win-x64"
   },
   "keywords": [
     "sync",
@@ -62,6 +63,7 @@
     "@types/archiver": "^6.0.3",
     "@types/node": "^22.12.0",
     "@types/picomatch": "^3.0.1",
+    "@yao-pkg/pkg": "^6.19.0",
     "esbuild": "^0.24.2",
     "tsx": "^4.19.2",
     "typescript": "^5.7.3",

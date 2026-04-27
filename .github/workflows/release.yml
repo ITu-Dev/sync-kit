@@ -1,0 +1,89 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to release (e.g. v1.1.0). Leave blank to use commit SHA.'
+        required: false
+
+jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      - run: npm ci
+      - run: npm test
+
+  build-binaries:
+    name: Build cross-platform binaries
+    needs: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      - run: npm ci
+
+      - name: Build esbuild bundle
+        run: npm run bundle
+
+      - name: Pack binaries (macOS arm64/x64, Linux arm64/x64, Windows x64)
+        run: |
+          npx pkg bundle/sync-kit.cjs \
+            --out-path bin \
+            --targets node20-macos-arm64,node20-macos-x64,node20-linux-x64,node20-linux-arm64,node20-win-x64
+
+      - name: List produced binaries
+        run: ls -lh bin/
+
+      - name: Upload binaries artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sync-kit-binaries
+          path: bin/*
+          retention-days: 7
+
+  release:
+    name: Publish GitHub Release
+    needs: build-binaries
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download binaries artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: sync-kit-binaries
+          path: bin/
+
+      - name: Compute checksums
+        run: |
+          cd bin
+          sha256sum * > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+
+      - name: Create / update GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            bin/*
+          generate_release_notes: true
+          fail_on_unmatched_files: true
+          # When triggered by a tag push the action infers the tag automatically;
+          # for workflow_dispatch with an explicit input, surface it here.
+          tag_name: ${{ github.event.inputs.tag || github.ref_name }}
